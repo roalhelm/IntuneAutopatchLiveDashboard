@@ -1,4 +1,5 @@
 const graphBaseUrl = 'https://graph.microsoft.com';
+const storageKey = 'intuneAutopatchSpaConfig';
 const rowColumns = [
   ['deviceName', 'Gerät'],
   ['source', 'Auswertung'],
@@ -33,25 +34,12 @@ const aliases = {
   ring: ['PhaseName', 'DeploymentRing', 'AutopatchGroup', 'Autopatch group']
 };
 
-const state = { user: null, dashboard: null, msalClient: null, account: null, config: null };
+const state = { dashboard: null, msalClient: null, account: null, config: null };
 
 const e = (id) => document.getElementById(id);
 const esc = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function normalizeConfig() {
-  const configured = window.APP_CONFIG || {};
-  return {
-    clientId: configured.clientId || '',
-    tenantId: configured.tenantId || 'organizations',
-    redirectUri: configured.redirectUri || window.location.href.split('#')[0],
-    featureReportName: configured.featureReportName || 'FeatureUpdateDeviceState',
-    qualityReportName: configured.qualityReportName || '',
-    scopes: configured.scopes || ['User.Read', 'DeviceManagementManagedDevices.Read.All'],
-    authorityHost: configured.authorityHost || 'https://login.microsoftonline.com'
-  };
-}
 
 function renderNotice(message, isError = false) {
   e('notice').innerHTML = isError ? `<span class="error">${esc(message)}</span>` : esc(message);
@@ -63,39 +51,124 @@ function ensurePageDependencies() {
   if (!window.Papa) throw new Error('PapaParse konnte nicht geladen werden.');
 }
 
+function baseRedirectUri() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function loadSavedConfig() {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveConfig(config) {
+  window.localStorage.setItem(storageKey, JSON.stringify(config));
+}
+
+function configFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const clientId = params.get('clientId') || '';
+  const tenantId = params.get('tenantId') || '';
+  const qualityReportName = params.get('qualityReportName') || '';
+  if (!clientId && !tenantId && !qualityReportName) return {};
+  return { clientId, tenantId, qualityReportName };
+}
+
+function normalizeConfig() {
+  const defaults = {
+    clientId: '',
+    tenantId: 'organizations',
+    redirectUri: baseRedirectUri(),
+    authorityHost: 'https://login.microsoftonline.com',
+    scopes: ['User.Read', 'DeviceManagementManagedDevices.Read.All'],
+    featureReportName: 'FeatureUpdateDeviceState',
+    qualityReportName: ''
+  };
+  const configured = window.APP_CONFIG || {};
+  const saved = loadSavedConfig();
+  const query = configFromQuery();
+  const merged = { ...defaults, ...configured, ...saved, ...query };
+  merged.redirectUri = merged.redirectUri || baseRedirectUri();
+  merged.tenantId = merged.tenantId || 'organizations';
+  merged.clientId = String(merged.clientId || '').trim();
+  merged.qualityReportName = String(merged.qualityReportName || '').trim();
+  return merged;
+}
+
+function hasAuthConfig(config) {
+  return Boolean(config?.clientId);
+}
+
+function promptForConfig() {
+  const current = state.config || normalizeConfig();
+  const clientId = window.prompt('Bitte gib die Entra App (Client) ID ein:', current.clientId || '');
+  if (!clientId) return null;
+  const tenantId = window.prompt('Tenant (ID oder organizations):', current.tenantId || 'organizations');
+  if (!tenantId) return null;
+  const qualityReportName = window.prompt(
+    'Optional: Quality Report Name (leer lassen, wenn nicht genutzt):',
+    current.qualityReportName || ''
+  );
+  const updated = {
+    ...current,
+    clientId: clientId.trim(),
+    tenantId: tenantId.trim(),
+    qualityReportName: String(qualityReportName || '').trim(),
+    redirectUri: baseRedirectUri()
+  };
+  saveConfig(updated);
+  return updated;
+}
+
 function getAuthority(config) {
   return `${config.authorityHost.replace(/\/$/, '')}/${config.tenantId}`;
 }
 
-async function createMsalClient(config) {
+async function initializeMsalClient(config) {
   const client = new window.msal.PublicClientApplication({
     auth: {
       clientId: config.clientId,
       authority: getAuthority(config),
       redirectUri: config.redirectUri
     },
-    cache: {
-      cacheLocation: 'localStorage',
-      storeAuthStateInCookie: false
-    }
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
   });
-
   if (typeof client.initialize === 'function') await client.initialize();
   await client.handleRedirectPromise();
   return client;
 }
 
-function pickAccount(accounts) {
-  if (!accounts?.length) return null;
-  return accounts[0];
+async function ensureMsalClient(interactive) {
+  if (!state.config) state.config = normalizeConfig();
+
+  if (!hasAuthConfig(state.config)) {
+    if (!interactive) return false;
+    const configured = promptForConfig();
+    if (!configured) {
+      renderNotice('Anmeldung abgebrochen. Bitte Client-ID und Tenant beim nächsten Versuch angeben.', true);
+      return false;
+    }
+    state.config = configured;
+  }
+
+  if (!state.msalClient) {
+    state.msalClient = await initializeMsalClient(state.config);
+  }
+  state.account = state.msalClient.getAllAccounts()[0] || null;
+  return true;
 }
 
 async function signIn() {
+  const ready = await ensureMsalClient(true);
+  if (!ready) return;
   await state.msalClient.loginRedirect({ scopes: state.config.scopes, prompt: 'select_account' });
 }
 
 async function signOut() {
-  if (!state.account) return;
+  if (!state.account || !state.msalClient) return;
   await state.msalClient.logoutRedirect({ account: state.account, postLogoutRedirectUri: state.config.redirectUri });
 }
 
@@ -155,15 +228,9 @@ async function exportReport(accessToken, reportName) {
       `${graphBaseUrl}/v1.0/deviceManagement/reports/exportJobs/${encodeURIComponent(job.id)}`,
       { method: 'GET' }
     );
-
-    if (status.status === 'completed') {
-      return downloadCsvZip(status.url);
-    }
-    if (status.status === 'failed') {
-      throw new Error(`Intune-Report ${reportName} ist fehlgeschlagen.`);
-    }
+    if (status.status === 'completed') return downloadCsvZip(status.url);
+    if (status.status === 'failed') throw new Error(`Intune-Report ${reportName} ist fehlgeschlagen.`);
   }
-
   throw new Error(`Zeitüberschreitung beim Intune-Report ${reportName}.`);
 }
 
@@ -172,7 +239,6 @@ async function downloadCsvZip(url) {
   if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.blob.core.windows.net')) {
     throw new Error('Nicht vertrauenswürdige Export-URL abgelehnt.');
   }
-
   const response = await fetch(url);
   if (!response.ok) throw new Error('Download des Reports fehlgeschlagen.');
   const arrayBuffer = await response.arrayBuffer();
@@ -396,10 +462,7 @@ async function loadDashboard() {
   const summary = summarize(rows);
 
   state.dashboard = { rows, evaluations, summary, generatedAt: new Date().toISOString(), warnings };
-
-  const qualityNote = state.config.qualityReportName
-    ? ''
-    : ' | Quality-Report ist noch nicht tenant-spezifisch konfiguriert.';
+  const qualityNote = state.config.qualityReportName ? '' : ' | Quality-Report ist noch nicht tenant-spezifisch konfiguriert.';
   const warningText = warnings.length ? ` | Hinweise: ${warnings.join(' | ')}` : '';
   renderNotice(`Datenstand: ${new Date(state.dashboard.generatedAt).toLocaleString()}${qualityNote}${warningText}`);
   renderCards(summary);
@@ -411,7 +474,13 @@ function syncAuthUi() {
   e('signin').hidden = Boolean(state.account);
   e('signout').hidden = !state.account;
   e('user').textContent = state.account?.name || state.account?.username || '';
-  if (!state.account) renderNotice('Bitte mit einem berechtigten Entra-ID-Benutzer anmelden.');
+  if (!state.account) {
+    if (!hasAuthConfig(state.config)) {
+      renderNotice('Klicke auf „Mit Microsoft anmelden“. Danach wirst du einmalig nach Client-ID und Tenant gefragt.');
+    } else {
+      renderNotice('Bitte mit einem berechtigten Entra-ID-Benutzer anmelden.');
+    }
+  }
 }
 
 function wireEvents() {
@@ -437,12 +506,11 @@ async function bootstrap() {
   try {
     ensurePageDependencies();
     state.config = normalizeConfig();
-    if (!state.config.clientId) {
-      throw new Error('APP_CONFIG.clientId fehlt. Bitte in config.js setzen.');
-    }
-    state.msalClient = await createMsalClient(state.config);
-    state.account = pickAccount(state.msalClient.getAllAccounts());
     wireEvents();
+    const ready = await ensureMsalClient(false);
+    if (ready) {
+      state.account = state.msalClient.getAllAccounts()[0] || null;
+    }
     syncAuthUi();
     if (state.account) await loadDashboard();
   } catch (error) {
