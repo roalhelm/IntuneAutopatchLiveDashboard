@@ -39,13 +39,16 @@ Die App läuft als statische Seite (GitHub Pages) und ruft Microsoft Graph direk
 
 ## Repository konfigurieren
 
-Du kannst die App jetzt **ohne manuelles Editieren von `config.js`** starten:
+Für einen Login **ohne Eingabefenster** muss die App-ID einmalig im Repository hinterlegt sein:
 
-1. Seite öffnen.
-2. Auf **„Mit Microsoft anmelden“** klicken.
-3. Beim ersten Mal werden `clientId` und `tenantId` abgefragt und im Browser gespeichert.
+1. [config.js](C:/Dev/IntuneAutopatchLiveDashboard/public/config.js) öffnen.
+2. Werte setzen:
+   - `clientId` (Pflicht)
+   - `tenantId` (empfohlen, sonst `organizations`)
+   - optional `qualityReportName`
+3. Deployen und danach nur noch auf **„Mit Microsoft anmelden“** klicken.
 
-Optional kannst du [config.js](C:/Dev/IntuneAutopatchLiveDashboard/public/config.js) vorbefüllen, wenn du Defaults für dein Team setzen möchtest.
+Optional kannst du `clientId`/`tenantId` auch per URL übergeben (`?clientId=...&tenantId=...`), falls du dieselbe Build-Version in mehreren Tenants nutzen willst.
 
 ## GitHub Pages Deployment
 

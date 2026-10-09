@@ -1,5 +1,4 @@
 const graphBaseUrl = 'https://graph.microsoft.com';
-const storageKey = 'intuneAutopatchSpaConfig';
 const rowColumns = [
   ['deviceName', 'Gerät'],
   ['source', 'Auswertung'],
@@ -58,19 +57,6 @@ function baseRedirectUri() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
-function loadSavedConfig() {
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveConfig(config) {
-  window.localStorage.setItem(storageKey, JSON.stringify(config));
-}
-
 function configFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const clientId = params.get('clientId') || '';
@@ -91,9 +77,8 @@ function normalizeConfig() {
     qualityReportName: ''
   };
   const configured = window.APP_CONFIG || {};
-  const saved = loadSavedConfig();
   const query = configFromQuery();
-  const merged = { ...defaults, ...configured, ...saved, ...query };
+  const merged = { ...defaults, ...configured, ...query };
   merged.redirectUri = merged.redirectUri || baseRedirectUri();
   merged.tenantId = merged.tenantId || 'organizations';
   merged.clientId = String(merged.clientId || '').trim();
@@ -103,27 +88,6 @@ function normalizeConfig() {
 
 function hasAuthConfig(config) {
   return Boolean(config?.clientId);
-}
-
-function promptForConfig() {
-  const current = state.config || normalizeConfig();
-  const clientId = window.prompt('Bitte gib die Entra App (Client) ID ein:', current.clientId || '');
-  if (!clientId) return null;
-  const tenantId = window.prompt('Tenant (ID oder organizations):', current.tenantId || 'organizations');
-  if (!tenantId) return null;
-  const qualityReportName = window.prompt(
-    'Optional: Quality Report Name (leer lassen, wenn nicht genutzt):',
-    current.qualityReportName || ''
-  );
-  const updated = {
-    ...current,
-    clientId: clientId.trim(),
-    tenantId: tenantId.trim(),
-    qualityReportName: String(qualityReportName || '').trim(),
-    redirectUri: baseRedirectUri()
-  };
-  saveConfig(updated);
-  return updated;
 }
 
 function getAuthority(config) {
@@ -144,18 +108,16 @@ async function initializeMsalClient(config) {
   return client;
 }
 
-async function ensureMsalClient(interactive) {
+async function ensureMsalClient() {
   ensureMsalDependency();
   if (!state.config) state.config = normalizeConfig();
 
   if (!hasAuthConfig(state.config)) {
-    if (!interactive) return false;
-    const configured = promptForConfig();
-    if (!configured) {
-      renderNotice('Anmeldung abgebrochen. Bitte Client-ID und Tenant beim nächsten Versuch angeben.', true);
-      return false;
-    }
-    state.config = configured;
+    renderNotice(
+      'Anmeldung nicht möglich: In config.js muss eine gültige clientId hinterlegt sein. Optional kannst du clientId/tenantId auch per URL-Query übergeben.',
+      true
+    );
+    return false;
   }
 
   if (!state.msalClient) {
@@ -166,7 +128,7 @@ async function ensureMsalClient(interactive) {
 }
 
 async function signIn() {
-  const ready = await ensureMsalClient(true);
+  const ready = await ensureMsalClient();
   if (!ready) return;
   await state.msalClient.loginRedirect({ scopes: state.config.scopes, prompt: 'select_account' });
 }
@@ -481,7 +443,7 @@ function syncAuthUi() {
   e('user').textContent = state.account?.name || state.account?.username || '';
   if (!state.account) {
     if (!hasAuthConfig(state.config)) {
-      renderNotice('Klicke auf „Mit Microsoft anmelden“. Danach wirst du einmalig nach Client-ID und Tenant gefragt.');
+      renderNotice('Bitte hinterlege clientId (und optional tenantId) in config.js. Danach funktioniert „Mit Microsoft anmelden“ direkt ohne Eingabefenster.');
     } else {
       renderNotice('Bitte mit einem berechtigten Entra-ID-Benutzer anmelden.');
     }
@@ -512,7 +474,7 @@ async function bootstrap() {
   wireEvents();
 
   try {
-    const ready = await ensureMsalClient(false);
+    const ready = await ensureMsalClient();
     if (ready) state.account = state.msalClient.getAllAccounts()[0] || null;
   } catch (error) {
     renderNotice(`Auth-Initialisierung fehlgeschlagen: ${error.message}`, true);
