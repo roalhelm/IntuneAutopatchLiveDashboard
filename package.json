@@ -1,0 +1,21 @@
+{
+  "name": "intune-autopatch-live-dashboard",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/config.js && node --check src/auth.js && node --check src/dashboard.js && node --check src/csv.js && node --check src/graph.js && node --check src/normalize.js"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^3.8.0",
+    "axios": "^1.12.2",
+    "csv-parse": "^6.1.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "unzipper": "^0.12.3"
+  }
+}
