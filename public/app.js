@@ -45,8 +45,11 @@ function renderNotice(message, isError = false) {
   e('notice').innerHTML = isError ? `<span class="error">${esc(message)}</span>` : esc(message);
 }
 
-function ensurePageDependencies() {
+function ensureMsalDependency() {
   if (!window.msal) throw new Error('MSAL konnte nicht geladen werden.');
+}
+
+function ensureDataDependencies() {
   if (!window.JSZip) throw new Error('JSZip konnte nicht geladen werden.');
   if (!window.Papa) throw new Error('PapaParse konnte nicht geladen werden.');
 }
@@ -142,6 +145,7 @@ async function initializeMsalClient(config) {
 }
 
 async function ensureMsalClient(interactive) {
+  ensureMsalDependency();
   if (!state.config) state.config = normalizeConfig();
 
   if (!hasAuthConfig(state.config)) {
@@ -437,6 +441,7 @@ function rowsByKind(kind) {
 }
 
 async function loadDashboard() {
+  ensureDataDependencies();
   renderNotice('Intune-Berichte werden live angefordert …');
   const token = await acquireToken();
   if (!token) return;
@@ -503,18 +508,23 @@ function wireEvents() {
 }
 
 async function bootstrap() {
+  state.config = normalizeConfig();
+  wireEvents();
+
   try {
-    ensurePageDependencies();
-    state.config = normalizeConfig();
-    wireEvents();
     const ready = await ensureMsalClient(false);
-    if (ready) {
-      state.account = state.msalClient.getAllAccounts()[0] || null;
-    }
-    syncAuthUi();
-    if (state.account) await loadDashboard();
+    if (ready) state.account = state.msalClient.getAllAccounts()[0] || null;
   } catch (error) {
-    renderNotice(error.message, true);
+    renderNotice(`Auth-Initialisierung fehlgeschlagen: ${error.message}`, true);
+  }
+
+  syncAuthUi();
+  if (state.account) {
+    try {
+      await loadDashboard();
+    } catch (error) {
+      renderNotice(error.message, true);
+    }
   }
 }
 

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Intune Autopatch Live Dashboard</title>
+    <link rel="stylesheet" href="./public/style.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Operations Dashboard</p>
+        <h1>Intune Autopatch Live</h1>
+        <p class="subtitle">Patchstand, Compliance, Fehlerbilder und Export je Auswertung</p>
+      </div>
+      <div class="header-actions">
+        <span id="user"></span>
+        <button id="signin" class="btn btn-primary">Mit Microsoft anmelden</button>
+        <button id="signout" class="btn btn-ghost" hidden>Abmelden</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section id="notice" class="notice"></section>
+
+      <section class="cards" id="cards"></section>
+
+      <section class="panel">
+        <h2>Auswertung</h2>
+        <div class="evaluation-grid">
+          <div>
+            <h3>Nach Schweregrad</h3>
+            <ul id="severityBreakdown" class="list"></ul>
+          </div>
+          <div>
+            <h3>Top Problemkategorien</h3>
+            <ul id="categoryBreakdown" class="list"></ul>
+          </div>
+          <div>
+            <h3>Nach Auswertungsquelle</h3>
+            <ul id="sourceBreakdown" class="list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="toolbar">
+          <input id="filter" placeholder="Gerät, Fehler, Status oder Ring filtern">
+          <select id="sourceFilter" aria-label="Auswertungsquelle filtern">
+            <option value="">Alle Quellen</option>
+            <option value="Feature">Feature</option>
+            <option value="Quality">Quality</option>
+          </select>
+          <select id="severityFilter" aria-label="Schweregrad filtern">
+            <option value="">Alle Severities</option>
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="info">info</option>
+            <option value="ok">ok</option>
+          </select>
+          <button id="refresh" class="btn btn-primary">Live-Daten aktualisieren</button>
+        </div>
+
+        <div class="toolbar export-toolbar">
+          <span>CSV-Export:</span>
+          <button id="exportFeature" class="btn btn-ghost">Feature</button>
+          <button id="exportQuality" class="btn btn-ghost">Quality</button>
+          <button id="exportCombined" class="btn btn-ghost">Kombiniert</button>
+          <button id="exportFiltered" class="btn btn-secondary">Aktuelle Ansicht</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Gerät</th>
+                <th>Quelle</th>
+                <th>Status</th>
+                <th>Ist → Ziel</th>
+                <th>Readiness</th>
+                <th>Problem</th>
+                <th>Fehler/Alert</th>
+                <th>Letzter Sync</th>
+                <th>Lösung</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="./public/config.js"></script>
+    <script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
+    <script src="./public/app.js" defer></script>
+  </body>
+</html>

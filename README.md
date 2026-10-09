@@ -54,7 +54,7 @@ Optional kannst du [config.js](C:/Dev/IntuneAutopatchLiveDashboard/public/config
    - **Settings → Pages**
    - Source: Deploy from a branch
    - Branch: `main` (oder gewünschter Branch)
-   - Folder: `/public`
+   - Folder: `/(root)` (GitHub Pages unterstützt nur `/(root)` oder `/docs`, nicht `/public`)
 3. Warten bis die Site live ist.
 4. Sicherstellen, dass genau diese URL als SPA Redirect URI in Entra hinterlegt ist.
 
